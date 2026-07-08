@@ -199,6 +199,9 @@ function xeroSectionTotal(sec, col) {
   return rs.filter((r) => r.RowType === 'Row').reduce((s, r) => s + xeroCell(r.Cells, col), 0);
 }
 const XERO_WAGE_RE = /wage|salar|superannuation|\bsuper\b|payroll|annual leave|long service|workcover|holiday pay|kiwisaver/i;
+function xeroIsWage(label) {
+  return XERO_WAGE_RE.test(label) && !/subsid|grant/i.test(label);
+}
 function xeroWageInSection(sec, col) {
   let sum = 0;
   const walk = (rows) => {
@@ -206,7 +209,7 @@ function xeroWageInSection(sec, col) {
       if (r.Rows) walk(r.Rows);
       if (r.RowType === 'Row') {
         const label = (r.Cells && r.Cells[0] && r.Cells[0].Value) || '';
-        if (XERO_WAGE_RE.test(label)) sum += xeroCell(r.Cells, col);
+        if (xeroIsWage(label)) sum += xeroCell(r.Cells, col);
       }
     }
   };
@@ -216,26 +219,35 @@ function xeroWageInSection(sec, col) {
 function xeroParsePLColumn(reportJson, col) {
   const report = reportJson && reportJson.Reports && reportJson.Reports[0];
   const rows = (report && report.Rows) || [];
-  let revenue = 0, cogs = 0, opex = 0, wagesSuper = 0;
+  let revenue = 0, cosTotal = 0, cosWages = 0, opex = 0, opexWages = 0;
   let haveIncome = false;
   for (const sec of rows) {
     if (sec.RowType !== 'Section') continue;
     const t = (sec.Title || '').toLowerCase();
     if (t.indexOf('other income') !== -1) continue;
     if (t.indexOf('cost of sales') !== -1 || t.indexOf('cost of goods') !== -1) {
-      cogs += xeroSectionTotal(sec, col); continue;
+      cosTotal += xeroSectionTotal(sec, col);
+      cosWages += xeroWageInSection(sec, col);
+      continue;
     }
     if (!haveIncome && (t.indexOf('income') !== -1 || t.indexOf('revenue') !== -1) && t.indexOf('cost') === -1) {
       revenue = xeroSectionTotal(sec, col); haveIncome = true; continue;
     }
     if (t.indexOf('operating expense') !== -1 || t.indexOf('expense') !== -1 || t.indexOf('overhead') !== -1 || t.indexOf('administration') !== -1) {
       opex += xeroSectionTotal(sec, col);
-      wagesSuper += xeroWageInSection(sec, col);
+      opexWages += xeroWageInSection(sec, col);
       continue;
     }
   }
-  return { revenue: revenue, cogs: cogs, wagesSuper: wagesSuper, overheads: opex - wagesSuper };
+  // Wages booked in Cost of Sales are pulled OUT of COGS and reported as labour
+  // (Wage %), per owner decision - labour tracked on its own line, not buried in
+  // cost of goods. Reconciliation note: dashboard COGS = Cost of Sales - wages.
+  const cogs = cosTotal - cosWages;
+  const wagesSuper = cosWages + opexWages;
+  const overheads = opex - opexWages;
+  return { revenue: revenue, cogs: cogs, wagesSuper: wagesSuper, overheads: overheads };
 }
+
 function xeroMonthList(fromMonth, toMonth) {
   const out = [];
   let parts = fromMonth.split('-').map(Number);
@@ -586,7 +598,7 @@ async function authCallback(env, source, url) {
     let _detail = '';
     try { _detail = await res.text(); } catch (e) { _detail = '(no body)'; }
     console.log('accounting token exchange failed ' + res.status + ': ' + _detail);
-    return new Response('DIAG token exchange failed (' + res.status + '): ' + _detail, { status: 502 });
+    return new Response('The connection could not be finished (the tool said no: ' + res.status + '). Your AI will check the app settings.', { status: 502 });
   }
   const t = await res.json();
   await saveTokens(env, source, {
