@@ -292,8 +292,8 @@ async function lastSync(env, source) {
    header, NOT in the body (Xero and most OpenID providers expect this); 'post'
    (or unset, for back-compat) -> client_id/client_secret in the form body. */
 function tokenRequestInit(cfg, params, env) {
-  const id = env[cfg.clientIdSecret] || '';
-  const secret = env[cfg.clientSecretSecret] || '';
+  const id = (env[cfg.clientIdSecret] || '').trim();
+  const secret = (env[cfg.clientSecretSecret] || '').trim();
   const headers = { 'Content-Type': 'application/x-www-form-urlencoded' };
   const body = new URLSearchParams(params);
   if ((cfg.tokenAuth || 'post') === 'basic') {
@@ -558,7 +558,7 @@ async function authStart(env, source, url) {
   const redirectUri = url.origin + '/auth/' + source + '/callback';
   const p = new URLSearchParams({
     response_type: 'code',
-    client_id: env[cfg.clientIdSecret] || '',
+    client_id: (env[cfg.clientIdSecret] || '').trim(),
     redirect_uri: redirectUri,
     scope: cfg.scopes || '',
     state
