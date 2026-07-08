@@ -587,7 +587,6 @@ async function authCallback(env, source, url) {
     try { _detail = await res.text(); } catch (e) { _detail = '(no body)'; }
     console.log('accounting token exchange failed ' + res.status + ': ' + _detail);
     return new Response('DIAG token exchange failed (' + res.status + '): ' + _detail, { status: 502 });
-  });
   }
   const t = await res.json();
   await saveTokens(env, source, {
