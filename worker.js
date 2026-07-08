@@ -583,7 +583,11 @@ async function authCallback(env, source, url) {
     redirect_uri: redirectUri
   }, env));
   if (!res.ok) {
-    return new Response('The connection couldn’t be finished (the tool said no: ' + res.status + '). Your AI will check the app settings - the usual cause is a redirect address that doesn’t match exactly.', { status: 502 });
+    let _detail = '';
+    try { _detail = await res.text(); } catch (e) { _detail = '(no body)'; }
+    console.log('accounting token exchange failed ' + res.status + ': ' + _detail);
+    return new Response('DIAG token exchange failed (' + res.status + '): ' + _detail, { status: 502 });
+  });
   }
   const t = await res.json();
   await saveTokens(env, source, {
